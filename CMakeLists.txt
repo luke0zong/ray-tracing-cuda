@@ -23,7 +23,6 @@ set ( SOURCE_CUDA
   src/vec3.cuh
   src/aabb.cuh
   src/texture.cuh
-  src/bvh.cuh
   src/moving_sphere.cuh
   src/hittable.cuh
   src/hittable_list.cuh

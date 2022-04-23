@@ -17,20 +17,6 @@ public:
   __device__ vec3 min() const {return _min; }
   __device__ vec3 max() const {return _max; }
 
-  // __device__ inline bool hit(const ray& r, float tmin, float tmax) const {
-  //   for (int a = 0; a < 3; a++) {
-  //     float t0 = ffmin((_min[a] - r.origin()[a]) / r.direction()[a],
-  //                      (_max[a] - r.origin()[a]) / r.direction()[a]);
-  //     float t1 = ffmax((_min[a] - r.origin()[a]) / r.direction()[a],
-  //                      (_max[a] - r.origin()[a]) / r.direction()[a]);
-  //     tmin = ffmax(t0, tmin);
-  //     tmax = ffmin(t1, tmax);
-  //     if (tmax <= tmin)
-  //       return false;
-  //   }
-  //   return true;
-  // }
-
   __device__ inline bool hit(const ray& r, float tmin, float tmax) const {
     for (int a = 0; a < 3; a++) {
       float invD = 1.0f / r.direction()[a];
