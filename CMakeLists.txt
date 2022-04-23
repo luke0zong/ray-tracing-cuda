@@ -1,6 +1,5 @@
 cmake_minimum_required ( VERSION 3.11 )
 project(cuda_ray_tracing)
-# Set to c++14
 set ( CMAKE_CXX_STANDARD 11 )
 
 include(CheckLanguage)
@@ -15,6 +14,8 @@ if(CMAKE_CUDA_COMPILER)
 else()
   message(STATUS "No CUDA support")
 endif()
+
+set ( CUDA_FLAGS "-Xnvlink --suppress-stack-size-warning")
 
 set ( SOURCE_CUDA
   src/camera.cuh
