@@ -288,7 +288,7 @@ int main(int argc, char *argv[]) {
 
     int image_width;
     int image_hight;
-    int samples_per_pixel = 10;
+    int samples_per_pixel = 100;
     int max_depth = 5;
 
     if (PROFILE_RENDER) {
