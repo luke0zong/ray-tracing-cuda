@@ -288,7 +288,7 @@ int main(int argc, char *argv[]) {
 
     int image_width;
     int image_hight;
-    int samples_per_pixel = 100;
+    int samples_per_pixel = 10;
     int max_depth = 5;
 
     if (PROFILE_RENDER) {
@@ -444,11 +444,12 @@ int main(int argc, char *argv[]) {
     // std::cout << "P3\n" << image_width << " " << image_height << "\n0.999\n";
     clock_t t_start, t_end;
     t_start = clock();
-    #pragma acc parallel loop copyout(R[0:size]) copyout(G[0:size]) copyout(B[0:size])
+    #pragma acc kernels
+    // #pragma acc parallel loop copyout(R[0:size]) copyout(G[0:size]) copyout(B[0:size])
     for (int i = image_width - 1; i >= 0; --i) {
         // printf("%d\n", i);
         //std::cerr << "\rScanlines remaining: " << i << ' ' << std::flush;
-        #pragma acc loop
+        //#pragma acc loop
         for (int j = 0; j < image_height; ++j) {
             color pixel_color(0,0,0);
             for (int s = 0; s < samples_per_pixel; ++s) {
@@ -482,4 +483,7 @@ int main(int argc, char *argv[]) {
     // Save to png
 	const std::string filename("raytrace.png");
 	write_matrix_to_png(R, G, B, filename, image_width, image_height);
+    free(R);
+    free(G);
+    free(B);
 }
