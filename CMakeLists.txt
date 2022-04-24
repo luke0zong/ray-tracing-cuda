@@ -15,7 +15,8 @@ else()
   message(STATUS "No CUDA support")
 endif()
 
-set ( CUDA_FLAGS "-Xnvlink --suppress-stack-size-warning")
+# Suppress warnings about stack size
+set( CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xnvlink --suppress-stack-size-warning" CACHE STRING "" FORCE)
 
 set ( SOURCE_CUDA
   src/camera.cuh
