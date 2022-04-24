@@ -1,6 +1,6 @@
 cmake_minimum_required ( VERSION 3.11 )
 project(cuda_ray_tracing)
-set ( CMAKE_CXX_STANDARD 11 )
+set ( CMAKE_CXX_STANDARD 14 )
 
 include(CheckLanguage)
 check_language(CUDA)
@@ -36,3 +36,6 @@ add_executable(${PROJECT_NAME} ${SOURCE_CUDA})
 
 # Include Eigen for linear algebra, stb to export images.
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen" "${CMAKE_CURRENT_SOURCE_DIR}/external/stb")
+
+# set cuda standard to 14
+set_property(TARGET ${PROJECT_NAME} PROPERTY CUDA_STANDARD 14)

@@ -102,13 +102,16 @@ __device__ vec3 color(const ray& r, hittable **world, curandState *local_rand_st
   return vec3(0.0,0.0,0.0); // exceeded recursion, return black
 }
 
-__global__ void render_init(int max_x, int max_y, curandState *rand_state) {
+__global__ void render_init(int max_x, int max_y, int stride, curandState *rand_state) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
-  int pixel_index = j*max_x + i;
+  int pixel_index = (j+stride)*max_x + i;
+  // printf("stride = %d, i = %d, j = %d, pixel_index = %d\n", stride, i,j,pixel_index);
   //Each thread gets same seed, a different sequence number, no offset
-  curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
+  curand_init(2022+pixel_index, 0, 0, &rand_state[pixel_index]);
+  // curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
+
 }
 
 __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hittable **world, curandState *rand_state) {
@@ -137,7 +140,8 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
 
 __global__ void rand_init(curandState *rand_state) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    curand_init(1984, 0, 0, rand_state);
+    curand_init(2022, 0, 0, rand_state);
+    // curand_init(1984, 0, 0, rand_state);
   }
 }
 
@@ -259,6 +263,10 @@ int main (int argc, char** argv) {
     ny = 373;
   }
 
+  // nx = 100;
+  // ny = 100;
+  // ns = 10;
+
 
   std::cerr << "Rendering a " << nx << "x" << ny << " image with " << ns << " samples per pixel ";
   std::cerr << "in " << tx << "x" << ty << " blocks.\n";
@@ -266,15 +274,23 @@ int main (int argc, char** argv) {
   int num_pixels = nx*ny;
   size_t fb_size = num_pixels*sizeof(vec3);
 
+  // multiplu gpu devices
+  int num_devices = 0;
+  cudaGetDeviceCount(&num_devices);
+  std::cerr << "Found " << num_devices << " GPU devices.\n";
+
   // allocate FB
   vec3 *fb;
   checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
+  checkCudaErrors(cudaDeviceSynchronize());
 
   // allocate random state
   curandState *d_rand_state;
-  checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
+  checkCudaErrors(cudaMallocManaged((void **)&d_rand_state, num_pixels*sizeof(curandState)));
+  checkCudaErrors(cudaDeviceSynchronize());
   curandState *d_rand_state2;
-  checkCudaErrors(cudaMalloc((void **)&d_rand_state2, 1*sizeof(curandState)));
+  checkCudaErrors(cudaMallocManaged((void **)&d_rand_state2, 1*sizeof(curandState)));
+  checkCudaErrors(cudaDeviceSynchronize());
 
   // we need that 2nd random state to be initialized for the world creation
   rand_init<<<1,1>>>(d_rand_state2);
@@ -284,23 +300,41 @@ int main (int argc, char** argv) {
   // make our world of hittables & the camera
   hittable **d_list;
   int num_hittables = 22*22+1+3;
-  checkCudaErrors(cudaMalloc((void **)&d_list, num_hittables*sizeof(hittable *)));
+  checkCudaErrors(cudaMallocManaged((void **)&d_list, num_hittables*sizeof(hittable *)));
   hittable **d_world;
-  checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable *)));
+  checkCudaErrors(cudaMallocManaged((void **)&d_world, sizeof(hittable *)));
   camera **d_camera;
-  checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(camera *)));
+  checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera *)));
   create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny, d_rand_state2);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
   clock_t start, stop;
   start = clock();
+
+
   // Render our buffer
   dim3 blocks(nx/tx+1,ny/ty+1);
   dim3 threads(tx,ty);
-  render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
+
+  // // split the init into 2 gpus, each take half of the work
+  checkCudaErrors(cudaSetDevice(0));
+  render_init<<<blocks, threads>>>(nx, 5, 0, d_rand_state);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
+
+  checkCudaErrors(cudaSetDevice(1));
+  render_init<<<blocks, threads>>>(nx, 5, 5, d_rand_state);
+  checkCudaErrors(cudaGetLastError());
+
+  checkCudaErrors(cudaDeviceSynchronize());
+
+  checkCudaErrors(cudaSetDevice(0));
+
+  // render_init<<<blocks, threads>>>(nx, ny, 0, d_rand_state);
+  // checkCudaErrors(cudaGetLastError());
+  // checkCudaErrors(cudaDeviceSynchronize());
+
   render<<<blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize()); // errors when profiling
@@ -340,6 +374,7 @@ int main (int argc, char** argv) {
   checkCudaErrors(cudaFree(d_world));
   checkCudaErrors(cudaFree(d_list));
   checkCudaErrors(cudaFree(d_rand_state));
+  checkCudaErrors(cudaFree(d_rand_state2));
   checkCudaErrors(cudaFree(fb));
 
   cudaDeviceReset();
