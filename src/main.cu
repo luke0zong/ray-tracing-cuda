@@ -102,29 +102,26 @@ __device__ vec3 color(const ray& r, hittable **world, curandState *local_rand_st
   return vec3(0.0,0.0,0.0); // exceeded recursion, return black
 }
 
-__global__ void render_init(int max_x, int max_y, int stride, curandState *rand_state) {
+__global__ void render_init(int max_x, int max_y, curandState *rand_state) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
-  int pixel_index = (j+stride)*max_x + i;
-  // printf("stride = %d, i = %d, j = %d, pixel_index = %d\n", stride, i,j,pixel_index);
+  int pixel_index = j*max_x + i;
   //Each thread gets same seed, a different sequence number, no offset
-  curand_init(2022+pixel_index, 0, 0, &rand_state[pixel_index]);
-  // curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
-
+  curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
 }
 
-__global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hittable **world, curandState *rand_state) {
+__global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hittable **world, curandState *rand_state, int offset_x) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
-  if (i < max_x and j < max_y) {
-    int pixel_index = j*max_x + i;
+  if (i < max_x / 2 and j < max_y) {
+    int pixel_index = j*max_x + i + offset_x;
     curandState local_rand_state = rand_state[pixel_index];
     vec3 col(0,0,0);
 
     // get pixel sample for ns times
     for(int s=0; s < ns; s++) {
-      float u = float(i + curand_uniform(&local_rand_state)) / float(max_x);
+      float u = float(i + offset_x + curand_uniform(&local_rand_state)) / float(max_x);
       float v = float(j + curand_uniform(&local_rand_state)) / float(max_y);
       ray r = (*cam)->get_ray(u, v, &local_rand_state);
       col += color(r, world, &local_rand_state);
@@ -134,7 +131,7 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
     col[0] = sqrt(col[0]);
     col[1] = sqrt(col[1]);
     col[2] = sqrt(col[2]);
-    fb[pixel_index] = col;
+    fb[j*max_x/2 + i] = col;
   }
 }
 
@@ -277,37 +274,67 @@ int main (int argc, char** argv) {
   // multiplu gpu devices
   int num_devices = 0;
   cudaGetDeviceCount(&num_devices);
+  //Enable peer access between participating GPUs:
+  // cudaSetDevice(0);
+  // cudaDeviceEnablePeerAccess(1, 0);
+  // cudaSetDevice(1);
+  // cudaDeviceEnablePeerAccess(1, 0);
+  // checkCudaErrors(cudaGetLastError());
   std::cerr << "Found " << num_devices << " GPU devices.\n";
 
   // allocate FB
+  checkCudaErrors(cudaSetDevice(0));
   vec3 *fb;
-  checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
+  checkCudaErrors(cudaMalloc((void **)&fb, fb_size/2));
+
+  checkCudaErrors(cudaSetDevice(1));
+  vec3 *fb_copy;
+  checkCudaErrors(cudaMalloc((void **)&fb_copy, fb_size/2));
   checkCudaErrors(cudaDeviceSynchronize());
 
   // allocate random state
+  checkCudaErrors(cudaSetDevice(0));
   curandState *d_rand_state;
-  checkCudaErrors(cudaMallocManaged((void **)&d_rand_state, num_pixels*sizeof(curandState)));
-  checkCudaErrors(cudaDeviceSynchronize());
+  checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
   curandState *d_rand_state2;
-  checkCudaErrors(cudaMallocManaged((void **)&d_rand_state2, 1*sizeof(curandState)));
-  checkCudaErrors(cudaDeviceSynchronize());
-
-  // we need that 2nd random state to be initialized for the world creation
+  checkCudaErrors(cudaMalloc((void **)&d_rand_state2, 1*sizeof(curandState)));
   rand_init<<<1,1>>>(d_rand_state2);
+  checkCudaErrors(cudaGetLastError());
+  //checkCudaErrors(cudaDeviceSynchronize());
+
+  // copy on device2
+  checkCudaErrors(cudaSetDevice(1));
+  curandState *d_rand_state_copy;
+  checkCudaErrors(cudaMalloc((void **)&d_rand_state_copy, num_pixels*sizeof(curandState)));
+  curandState *d_rand_state2_copy;
+  checkCudaErrors(cudaMalloc((void **)&d_rand_state2_copy, 1*sizeof(curandState)));
+  rand_init<<<1,1>>>(d_rand_state2_copy);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
   // make our world of hittables & the camera
+  checkCudaErrors(cudaSetDevice(0));
   hittable **d_list;
   int num_hittables = 22*22+1+3;
-  checkCudaErrors(cudaMallocManaged((void **)&d_list, num_hittables*sizeof(hittable *)));
+  checkCudaErrors(cudaMalloc((void **)&d_list, num_hittables*sizeof(hittable *)));
   hittable **d_world;
-  checkCudaErrors(cudaMallocManaged((void **)&d_world, sizeof(hittable *)));
+  checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable *)));
   camera **d_camera;
-  checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera *)));
+  checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(camera *)));
   create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny, d_rand_state2);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
+  //checkCudaErrors(cudaDeviceSynchronize());
+
+  checkCudaErrors(cudaSetDevice(1));
+  hittable **d_list_copy;
+  checkCudaErrors(cudaMalloc((void **)&d_list_copy, num_hittables*sizeof(hittable *)));
+  hittable **d_world_copy;
+  checkCudaErrors(cudaMalloc((void **)&d_world_copy, sizeof(hittable *)));
+  camera **d_camera_copy;
+  checkCudaErrors(cudaMalloc((void **)&d_camera_copy, sizeof(camera *)));
+  create_world<<<1,1>>>(d_list_copy, d_world_copy, d_camera_copy, nx, ny, d_rand_state2_copy);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize()); 
 
   clock_t start, stop;
   start = clock();
@@ -319,26 +346,33 @@ int main (int argc, char** argv) {
 
   // // split the init into 2 gpus, each take half of the work
   checkCudaErrors(cudaSetDevice(0));
-  render_init<<<blocks, threads>>>(nx, 5, 0, d_rand_state);
+  render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
+  // checkCudaErrors(cudaDeviceSynchronize());
 
   checkCudaErrors(cudaSetDevice(1));
-  render_init<<<blocks, threads>>>(nx, 5, 5, d_rand_state);
+  render_init<<<blocks, threads>>>(nx, ny, d_rand_state_copy);
   checkCudaErrors(cudaGetLastError());
 
   checkCudaErrors(cudaDeviceSynchronize());
-
-  checkCudaErrors(cudaSetDevice(0));
 
   // render_init<<<blocks, threads>>>(nx, ny, 0, d_rand_state);
   // checkCudaErrors(cudaGetLastError());
   // checkCudaErrors(cudaDeviceSynchronize());
-
-  render<<<blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state);
+  
+  dim3 half_blocks(nx/tx/2+1, ny/ty+1);
+  checkCudaErrors(cudaSetDevice(0));
+  render<<<blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state, 0);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize()); // errors when profiling
-  //cudaDeviceSynchronize(); // errors when profiling
+  checkCudaErrors(cudaSetDevice(1));
+  render<<<half_blocks, threads>>>(fb_copy, nx, ny,  ns, d_camera_copy, d_world_copy, d_rand_state_copy, nx/2);
+  checkCudaErrors(cudaGetLastError());
+  //checkCudaErrors(cudaDeviceSynchronize()); // errors when profiling
+  vec3 *fb_host = (vec3*) malloc(fb_size/2);
+  vec3 *fb_host_copy = (vec3*) malloc(fb_size/2);
+  cudaMemcpy(fb_host, fb, fb_size/2, cudaMemcpyDeviceToHost);
+  cudaMemcpy(fb_host_copy, fb_copy, fb_size/2, cudaMemcpyDeviceToHost);
+  
   stop = clock();
   double timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
   std::cerr << "took " << timer_seconds << " seconds.\n";
@@ -350,15 +384,22 @@ int main (int argc, char** argv) {
 
   // Output FB as Image
   for (int j = 0; j < ny; j++) {
-    for (int i = 0; i < nx; i++) {
-      size_t pixel_index = j*nx + i;
-      auto ir = fb[pixel_index].r();
-      auto ig = fb[pixel_index].g();
-      auto ib = fb[pixel_index].b();
-      R(i, ny-1-j) = ir;
-      G(i, ny-1-j) = ig;
-      B(i, ny-1-j) = ib;
+    for (int i = 0; i < nx/2; i++) {
+      size_t pixel_index = j*nx/2 + i;
+      double ir_1 = fb_host[pixel_index].r();
+      double ig_1 = fb_host[pixel_index].g();
+      double ib_1 = fb_host[pixel_index].b();
+      double ir_2 = fb_host_copy[pixel_index].r();
+      double ig_2 = fb_host_copy[pixel_index].g();
+      double ib_2 = fb_host_copy[pixel_index].b();
+      R(i, ny-1-j) = ir_1;
+      G(i, ny-1-j) = ig_1;
+      B(i, ny-1-j) = ib_1;
       A(i, ny-1-j) = 1;
+      R(i+nx/2, ny-1-j) = ir_2;
+      G(i+nx/2, ny-1-j) = ig_2;
+      B(i+nx/2, ny-1-j) = ib_2;
+      A(i+nx/2, ny-1-j) = 1;
     }
   }
   const std::string filename("raytrace.png");
