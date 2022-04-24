@@ -265,7 +265,8 @@ int main (int argc, char** argv) {
 
   int num_pixels = nx*ny;
   size_t fb_size = num_pixels*sizeof(vec3);
-
+  clock_t start, stop;
+  start = clock();
   // allocate FB
   vec3 *fb;
   checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
@@ -292,8 +293,11 @@ int main (int argc, char** argv) {
   create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny, d_rand_state2);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
+  stop = clock();
+  double timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
+  std::cerr << "Malloc and other overhead took " << timer_seconds << " seconds.\n";
 
-  clock_t start, stop;
+
   start = clock();
   // Render our buffer
   dim3 blocks(nx/tx+1,ny/ty+1);
@@ -303,11 +307,10 @@ int main (int argc, char** argv) {
   checkCudaErrors(cudaDeviceSynchronize());
   render<<<blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize()); // errors when profiling
-  //cudaDeviceSynchronize(); // errors when profiling
+  checkCudaErrors(cudaDeviceSynchronize());
   stop = clock();
-  double timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
-  std::cerr << "took " << timer_seconds << " seconds.\n";
+  timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
+  std::cerr << "Kernel took " << timer_seconds << " seconds.\n";
 
   MatrixXd R = MatrixXd::Zero(nx, ny);
 	MatrixXd G = MatrixXd::Zero(nx, ny);
