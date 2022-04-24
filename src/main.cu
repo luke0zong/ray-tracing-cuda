@@ -108,7 +108,7 @@ __global__ void render_init(int max_x, int max_y, curandState *rand_state) {
   if((i >= max_x) || (j >= max_y)) return;
   int pixel_index = j*max_x + i;
   //Each thread gets same seed, a different sequence number, no offset
-  curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
+  curand_init(2022+pixel_index, 0, 0, &rand_state[pixel_index]);
 }
 
 __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hittable **world, curandState *rand_state) {
@@ -126,7 +126,7 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
       ray r = (*cam)->get_ray(u, v, &local_rand_state);
       col += color(r, world, &local_rand_state);
     }
-   
+
     col /= float(ns);
     col[0] = sqrt(col[0]);
     col[1] = sqrt(col[1]);
@@ -137,7 +137,7 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
 
 __global__ void rand_init(curandState *rand_state) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    curand_init(1984, 0, 0, rand_state);
+    curand_init(2022, 0, 0, rand_state);
   }
 }
 
@@ -340,6 +340,7 @@ int main (int argc, char** argv) {
   checkCudaErrors(cudaFree(d_world));
   checkCudaErrors(cudaFree(d_list));
   checkCudaErrors(cudaFree(d_rand_state));
+  checkCudaErrors(cudaFree(d_rand_state2));
   checkCudaErrors(cudaFree(fb));
 
   cudaDeviceReset();

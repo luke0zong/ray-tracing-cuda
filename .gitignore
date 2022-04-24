@@ -7,3 +7,6 @@
 
 # build folder
 build/
+
+# output folder
+*_output/
