@@ -108,7 +108,7 @@ __global__ void render_init(int max_x, int max_y, curandState *rand_state) {
   if((i >= max_x) || (j >= max_y)) return;
   int pixel_index = j*max_x + i;
   //Each thread gets same seed, a different sequence number, no offset
-  curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);
+  curand_init(2022+pixel_index, 0, 0, &rand_state[pixel_index]);
 }
 
 __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hittable **world, curandState *rand_state, int offset_x) {
@@ -126,7 +126,7 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
       ray r = (*cam)->get_ray(u, v, &local_rand_state);
       col += color(r, world, &local_rand_state);
     }
-   
+
     col /= float(ns);
     col[0] = sqrt(col[0]);
     col[1] = sqrt(col[1]);
@@ -138,7 +138,6 @@ __global__ void render(vec3 *fb, int max_x, int max_y, int ns, camera **cam, hit
 __global__ void rand_init(curandState *rand_state) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     curand_init(2022, 0, 0, rand_state);
-    // curand_init(1984, 0, 0, rand_state);
   }
 }
 
@@ -177,7 +176,7 @@ __global__ void create_world(hittable **d_list, hittable **d_world, camera **d_c
         }
       }
     }
-    
+
     d_list[i++] = new moving_sphere(vec3(0, 1,0),  vec3(0, 1,0),   0.f, 1.f, 1.0, new dielectric(1.5));
     d_list[i++] = new moving_sphere(vec3(-4, 1, 0),vec3(-4, 1, 0), 0.f, 1.f, 1.0,
                                     new lambertian(new constant_texture(vec3(0.4, 0.2, 0.1))));
@@ -260,10 +259,6 @@ int main (int argc, char** argv) {
     ny = 373;
   }
 
-  // nx = 100;
-  // ny = 100;
-  // ns = 10;
-
 
   std::cerr << "Rendering a " << nx << "x" << ny << " image with " << ns << " samples per pixel ";
   std::cerr << "in " << tx << "x" << ty << " blocks.\n";
@@ -274,12 +269,6 @@ int main (int argc, char** argv) {
   // multiplu gpu devices
   int num_devices = 0;
   cudaGetDeviceCount(&num_devices);
-  //Enable peer access between participating GPUs:
-  // cudaSetDevice(0);
-  // cudaDeviceEnablePeerAccess(1, 0);
-  // cudaSetDevice(1);
-  // cudaDeviceEnablePeerAccess(1, 0);
-  // checkCudaErrors(cudaGetLastError());
   std::cerr << "Found " << num_devices << " GPU devices.\n";
 
   // allocate FB
@@ -302,7 +291,7 @@ int main (int argc, char** argv) {
   checkCudaErrors(cudaGetLastError());
   //checkCudaErrors(cudaDeviceSynchronize());
 
-  // copy on device2
+  // copy on device 1
   checkCudaErrors(cudaSetDevice(1));
   curandState *d_rand_state_copy;
   checkCudaErrors(cudaMalloc((void **)&d_rand_state_copy, num_pixels*sizeof(curandState)));
@@ -334,7 +323,7 @@ int main (int argc, char** argv) {
   checkCudaErrors(cudaMalloc((void **)&d_camera_copy, sizeof(camera *)));
   create_world<<<1,1>>>(d_list_copy, d_world_copy, d_camera_copy, nx, ny, d_rand_state2_copy);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize()); 
+  checkCudaErrors(cudaDeviceSynchronize());
 
   clock_t start, stop;
   start = clock();
@@ -344,7 +333,6 @@ int main (int argc, char** argv) {
   dim3 blocks(nx/tx+1,ny/ty+1);
   dim3 threads(tx,ty);
 
-  // // split the init into 2 gpus, each take half of the work
   checkCudaErrors(cudaSetDevice(0));
   render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
   checkCudaErrors(cudaGetLastError());
@@ -359,10 +347,10 @@ int main (int argc, char** argv) {
   // render_init<<<blocks, threads>>>(nx, ny, 0, d_rand_state);
   // checkCudaErrors(cudaGetLastError());
   // checkCudaErrors(cudaDeviceSynchronize());
-  
+
   dim3 half_blocks(nx/tx/2+1, ny/ty+1);
   checkCudaErrors(cudaSetDevice(0));
-  render<<<blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state, 0);
+  render<<<half_blocks, threads>>>(fb, nx, ny,  ns, d_camera, d_world, d_rand_state, 0);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaSetDevice(1));
   render<<<half_blocks, threads>>>(fb_copy, nx, ny,  ns, d_camera_copy, d_world_copy, d_rand_state_copy, nx/2);
@@ -372,7 +360,7 @@ int main (int argc, char** argv) {
   vec3 *fb_host_copy = (vec3*) malloc(fb_size/2);
   cudaMemcpy(fb_host, fb, fb_size/2, cudaMemcpyDeviceToHost);
   cudaMemcpy(fb_host_copy, fb_copy, fb_size/2, cudaMemcpyDeviceToHost);
-  
+
   stop = clock();
   double timer_seconds = ((double)(stop - start)) / CLOCKS_PER_SEC;
   std::cerr << "took " << timer_seconds << " seconds.\n";
