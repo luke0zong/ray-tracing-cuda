@@ -26,7 +26,7 @@ echo "CXX = $CXX"
 
 # cmake and build
 echo "Cmaking and building..."
-build_dir="$(hostname -s)_build"
+build_dir="$(hostname -s)_cuda_build"
 cmake -B $build_dir
 cd $build_dir
 echo `pwd`
