@@ -25,5 +25,6 @@ build_dir="$(hostname -s)_openmp_build"
 cmake -B $build_dir
 cd $build_dir
 cp ../run_tests.sh .
+cp ../run_tests_single.sh .
 echo `pwd`
 make
