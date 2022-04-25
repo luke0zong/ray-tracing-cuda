@@ -6,7 +6,7 @@
 *.fatbin
 
 # build folder
-build/
+*build/
 
 # output folder
 *_output/

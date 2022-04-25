@@ -1,6 +1,7 @@
 cmake_minimum_required ( VERSION 3.11 )
 project(cuda_ray_tracing)
 set ( CMAKE_CXX_STANDARD 14 )
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CheckLanguage)
 check_language(CUDA)
@@ -16,7 +17,7 @@ else()
 endif()
 
 # Suppress warnings about stack size
-set( CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xnvlink --suppress-stack-size-warning" CACHE STRING "" FORCE)
+set( CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --use_fast_math -Xnvlink --suppress-stack-size-warning" CACHE STRING "" FORCE)
 
 set ( SOURCE_CUDA
   src/camera.cuh
@@ -24,6 +25,7 @@ set ( SOURCE_CUDA
   src/vec3.cuh
   src/aabb.cuh
   src/texture.cuh
+  src/bvh.cuh
   src/moving_sphere.cuh
   src/hittable.cuh
   src/hittable_list.cuh
@@ -39,3 +41,19 @@ target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE
 
 # set cuda standard to 14
 set_property(TARGET ${PROJECT_NAME} PROPERTY CUDA_STANDARD 14)
+
+target_compile_options(cuda_ray_tracing PRIVATE
+  "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Wno-deprecated-gpu-targets -gencode arch=compute_35,code=sm_35>"
+)
+
+target_compile_options(cuda_ray_tracing PRIVATE
+  "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Wno-deprecated-gpu-targets -gencode arch=compute_52,code=sm_52>"
+)
+
+target_compile_options(cuda_ray_tracing PRIVATE
+  "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-gencode arch=compute_70,code=sm_70>"
+)
+
+target_compile_options(cuda_ray_tracing PRIVATE
+  "$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-gencode arch=compute_75,code=sm_75>"
+)

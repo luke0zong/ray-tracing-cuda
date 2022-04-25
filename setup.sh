@@ -2,9 +2,6 @@
 
 echo "Setting up environment on [$HOSTNAME]..."
 
-output_dir="$(hostname -s)_output"
-mkdir -p $output_dir
-
 # load necessary modules
 module unload cmake*
 module unload gcc*
@@ -29,7 +26,8 @@ echo "CXX = $CXX"
 
 # cmake and build
 echo "Cmaking and building..."
-cmake -B build
-cd build
+build_dir="$(hostname -s)_build"
+cmake -B $build_dir
+cd $build_dir
 echo `pwd`
 make
