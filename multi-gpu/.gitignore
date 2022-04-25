@@ -1,0 +1,12 @@
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+
+# build folder
+*build/
+
+# output folder
+*_output/
